@@ -396,10 +396,3 @@ function App() {
 }
 
 export default App;
-        </EnhancedAnimations>
-      </AdvancedGestures>
-    </SmoothScrolling>
-  );
-}
-
-export default App;
