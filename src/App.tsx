@@ -1,155 +1,166 @@
 import React from 'react';
-import { motion } from 'framer-motion';
-import { AnimatedRain } from './components/AnimatedRain';
-import { CinematicCar } from './components/CinematicCar';
-import { DynamicCityscape } from './components/DynamicCityscape';
-import { AtmosphericEffects } from './components/AtmosphericEffects';
 import './RaindropBackground.css';
 
 function App() {
+  // Generate multiple layers of raindrops with varying properties
+  const lightRaindrops = Array.from({ length: 80 }, (_, i) => (
+    <div
+      key={`light-${i}`}
+      className="raindrop light"
+      style={{
+        left: `${Math.random() * 100}%`,
+        animationDelay: `${Math.random() * 6}s`,
+        animationDuration: `${2 + Math.random() * 3}s`,
+        opacity: 0.2 + Math.random() * 0.3,
+        transform: `rotate(${-5 + Math.random() * 10}deg)`,
+      }}
+    />
+  ));
+
+  const mediumRaindrops = Array.from({ length: 60 }, (_, i) => (
+    <div
+      key={`medium-${i}`}
+      className="raindrop medium"
+      style={{
+        left: `${Math.random() * 100}%`,
+        animationDelay: `${Math.random() * 4}s`,
+        animationDuration: `${1.5 + Math.random() * 2}s`,
+        opacity: 0.3 + Math.random() * 0.3,
+        transform: `rotate(${-3 + Math.random() * 6}deg)`,
+      }}
+    />
+  ));
+
+  const heavyRaindrops = Array.from({ length: 40 }, (_, i) => (
+    <div
+      key={`heavy-${i}`}
+      className="raindrop heavy"
+      style={{
+        left: `${Math.random() * 100}%`,
+        animationDelay: `${Math.random() * 3}s`,
+        animationDuration: `${1 + Math.random() * 1.5}s`,
+        opacity: 0.4 + Math.random() * 0.3,
+        transform: `rotate(${-2 + Math.random() * 4}deg)`,
+      }}
+    />
+  ));
+
+  const splashDrops = Array.from({ length: 25 }, (_, i) => (
+    <div
+      key={`splash-${i}`}
+      className="raindrop splash"
+      style={{
+        left: `${Math.random() * 100}%`,
+        animationDelay: `${Math.random() * 4}s`,
+        animationDuration: `${0.8 + Math.random() * 1.2}s`,
+        opacity: 0.5 + Math.random() * 0.3,
+      }}
+    />
+  ));
+
   return (
-    <motion.div 
-      className="rain-container"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 2 }}
-    >
-      {/* Enhanced Dynamic Background */}
-      <motion.div 
-        className="rain-background"
-        animate={{
-          background: [
-            'linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 15%, #16213e 35%, #0f3460 55%, #1a1a2e 75%, #0a0a0f 100%)',
-            'linear-gradient(135deg, #0f0f14 0%, #1f1f33 15%, #1b2843 35%, #143565 55%, #1f1f33 75%, #0f0f14 100%)',
-            'linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 15%, #16213e 35%, #0f3460 55%, #1a1a2e 75%, #0a0a0f 100%)'
-          ]
-        }}
-        transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-      />
+    <div className="rain-container">
+      {/* Dynamic background with lightning effects */}
+      <div className="rain-background" />
+      <div className="lightning-layer" />
       
-      {/* Atmospheric Effects */}
-      <AtmosphericEffects />
-      
-      {/* Dynamic Cityscape */}
-      <DynamicCityscape />
-      
-      {/* Enhanced Street */}
-      <motion.div 
-        className="street"
-        style={{ position: 'absolute', bottom: 0, width: '100%', height: '25%', zIndex: 3 }}
-      >
-        <motion.div
-          className="road"
-          style={{
-            width: '100%',
-            height: '100%',
-            background: 'linear-gradient(180deg, rgba(30,30,35,0.9) 0%, rgba(20,20,25,0.95) 30%, rgba(15,15,20,1) 70%, rgba(10,10,15,1) 100%)',
-            borderTop: '2px solid rgba(60,60,70,0.6)'
-          }}
-          animate={{
-            boxShadow: [
-              'inset 0 10px 30px rgba(0,0,0,0.5)',
-              'inset 0 15px 40px rgba(0,0,0,0.7)',
-              'inset 0 10px 30px rgba(0,0,0,0.5)'
-            ]
-          }}
-          transition={{ duration: 4, repeat: Infinity }}
-        />
+      {/* City skyline */}
+      <div className="city-skyline">
+        <div className="building building-1" />
+        <div className="building building-2" />
+        <div className="building building-3" />
+        <div className="building building-4" />
+        <div className="building building-5" />
+        <div className="building building-6" />
+        <div className="building building-7" />
+        <div className="building building-8" />
+        <div className="building building-9" />
+        <div className="building building-10" />
         
-        {/* Street Reflections */}
-        <div className="street-reflections" style={{ position: 'absolute', bottom: 0, width: '100%', height: '100%', opacity: 0.4 }}>
-          {Array.from({ length: 20 }, (_, i) => (
-            <motion.div
-              key={i}
+        {/* Building windows with lights */}
+        <div className="city-lights">
+          {Array.from({ length: 50 }, (_, i) => (
+            <div
+              key={`light-${i}`}
+              className="window-light"
               style={{
-                position: 'absolute',
-                width: `${10 + Math.random() * 20}px`,
-                height: '3px',
-                background: 'linear-gradient(90deg, transparent 0%, rgba(173,216,230,0.3) 50%, transparent 100%)',
-                left: `${Math.random() * 100}%`,
-                bottom: `${Math.random() * 50}%`,
-                borderRadius: '2px'
-              }}
-              animate={{
-                opacity: [0.2, 0.6, 0.2],
-                scaleX: [0.8, 1.2, 0.8]
-              }}
-              transition={{
-                duration: 2 + Math.random() * 2,
-                repeat: Infinity,
-                delay: Math.random() * 3
+                left: `${10 + Math.random() * 80}%`,
+                top: `${30 + Math.random() * 40}%`,
+                animationDelay: `${Math.random() * 10}s`,
               }}
             />
           ))}
         </div>
-      </motion.div>
-      
-      {/* Cinematic Car */}
-      <CinematicCar />
-      
-      {/* Professional Rain System */}
-      <AnimatedRain />
-      
-      {/* Enhanced Clouds */}
-      <div className="clouds" style={{ position: 'absolute', top: 0, width: '100%', height: '100%', zIndex: 1 }}>
-        {Array.from({ length: 8 }, (_, i) => (
-          <motion.div
-            key={i}
-            className="cloud"
-            style={{
-              position: 'absolute',
-              width: `${80 + Math.random() * 60}px`,
-              height: `${30 + Math.random() * 20}px`,
-              background: 'rgba(255,255,255,0.08)',
-              borderRadius: '100px',
-              top: `${10 + Math.random() * 50}%`,
-              left: '-100px',
-              filter: 'blur(1px)'
-            }}
-            animate={{
-              x: window.innerWidth + 200,
-              opacity: [0, 0.6, 0.4, 0]
-            }}
-            transition={{
-              duration: 30 + Math.random() * 20,
-              repeat: Infinity,
-              delay: Math.random() * 10,
-              ease: "linear"
-            }}
-          />
-        ))}
       </div>
       
-      {/* Rain Puddle Effects */}
-      <div className="puddle-effects" style={{ position: 'absolute', bottom: 0, width: '100%', height: '25%', zIndex: 6 }}>
-        {Array.from({ length: 12 }, (_, i) => (
-          <motion.div
-            key={i}
+      {/* Street and car */}
+      <div className="street">
+        <div className="road" />
+        <div className="car moving-car">
+          <div className="car-body" />
+          <div className="car-roof" />
+          <div className="car-windshield" />
+          <div className="car-wheel car-wheel-front" />
+          <div className="car-wheel car-wheel-rear" />
+          <div className="headlight headlight-left" />
+          <div className="headlight headlight-right" />
+          <div className="taillight taillight-left" />
+          <div className="taillight taillight-right" />
+        </div>
+        
+        {/* Street reflections */}
+        <div className="street-reflections">
+          <div className="reflection car-reflection moving-reflection" />
+          <div className="reflection light-reflection-1 moving-light-1" />
+          <div className="reflection light-reflection-2 moving-light-2" />
+          <div className="reflection light-reflection-3 moving-light-3" />
+        </div>
+      </div>
+      
+      {/* Advanced cloud system */}
+      <div className="clouds">
+        <div className="cloud cloud-1" />
+        <div className="cloud cloud-2" />
+        <div className="cloud cloud-3" />
+        <div className="cloud cloud-4" />
+        <div className="cloud cloud-5" />
+      </div>
+      
+      {/* Multi-layered rain system */}
+      <div className="rain-layer background-rain">
+        {lightRaindrops}
+      </div>
+      
+      <div className="rain-layer medium-rain">
+        {mediumRaindrops}
+      </div>
+      
+      <div className="rain-layer foreground-rain">
+        {heavyRaindrops}
+      </div>
+      
+      <div className="rain-layer splash-rain">
+        {splashDrops}
+      </div>
+      
+      {/* Atmospheric effects */}
+      <div className="mist-layer" />
+      <div className="wind-effect" />
+      
+      {/* Rain puddle effects */}
+      <div className="puddle-effects">
+        {Array.from({ length: 15 }, (_, i) => (
+          <div
+            key={`ripple-${i}`}
+            className="rain-ripple"
             style={{
-              position: 'absolute',
-              bottom: '10%',
               left: `${Math.random() * 100}%`,
-              width: '0px',
-              height: '0px',
-              border: '2px solid rgba(173,216,230,0.5)',
-              borderRadius: '50%'
-            }}
-            animate={{
-              width: ['0px', '40px', '60px'],
-              height: ['0px', '40px', '60px'],
-              opacity: [1, 0.6, 0],
-              borderWidth: ['3px', '2px', '1px']
-            }}
-            transition={{
-              duration: 2,
-              repeat: Infinity,
-              delay: Math.random() * 3,
-              ease: "easeOut"
+              animationDelay: `${Math.random() * 3}s`,
             }}
           />
         ))}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
