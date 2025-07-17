@@ -392,6 +392,7 @@ function App() {
         </EnhancedAnimations>
       </AdvancedGestures>
     </SmoothScrolling>
+  );
 }
 
 export default App;
