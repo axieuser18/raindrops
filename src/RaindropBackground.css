@@ -905,10 +905,29 @@
   will-change: transform, opacity;
   backface-visibility: hidden;
   transform-style: preserve-3d;
+  contain: layout style paint;
 }
 
 .raindrop {
   transform: translateZ(0);
+  contain: strict;
+}
+
+/* Additional performance optimizations */
+.rain-layer {
+  contain: layout style paint;
+  transform: translateZ(0);
+}
+
+.city-skyline {
+  contain: layout style paint;
+}
+
+.street {
+  contain: layout style paint;
+}
+
+.clouds {
   contain: layout style paint;
 }
 
