@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useAudioMixer } from './hooks/useAudioMixer';
 import './RaindropBackground.css';
 
 function App() {
   const [rainIntensity] = useState(1.0); // Fixed intensity for better performance
+  const { isPlaying, isLoaded } = useAudioMixer();
 
   // Generate optimized raindrops with reduced count for performance
   const lightRaindrops = Array.from({ length: 40 }, (_, i) => (
