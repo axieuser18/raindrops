@@ -1,327 +1,404 @@
 import { useEffect, useRef, useState } from 'react';
 
 interface AudioMixerConfig {
-  track1Volume: number;
-  track2Volume: number;
   masterVolume: number;
-  crossfadePosition: number;
+  crossfadeDuration: number;
+  preloadBuffer: number;
 }
 
 export const useAudioMixer = () => {
-  const audio1Ref = useRef<HTMLAudioElement | null>(null);
-  const audio2Ref = useRef<HTMLAudioElement | null>(null);
-  const audio3Ref = useRef<HTMLAudioElement | null>(null); // Third track for seamless transitions
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioBuffersRef = useRef<AudioBuffer[]>([]);
+  const sourceNodesRef = useRef<AudioBufferSourceNode[]>([]);
+  const gainNodesRef = useRef<GainNode[]>([]);
+  const masterGainRef = useRef<GainNode | null>(null);
+  
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(0);
-  const crossfadeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [config] = useState<AudioMixerConfig>({
-    track1Volume: 0.8,
-    track2Volume: 0.7,
-    masterVolume: 0.9,
-    crossfadePosition: 0.5
-  });
+  
+  const nextStartTimeRef = useRef<number>(0);
+  const trackDurationRef = useRef<number>(0);
+  const isInitializedRef = useRef(false);
+
+  const config: AudioMixerConfig = {
+    masterVolume: 0.6,
+    crossfadeDuration: 1.5, // 1.5 seconds crossfade
+    preloadBuffer: 0.1 // Start next track 0.1 seconds early
+  };
 
   useEffect(() => {
-    initializeAudioSystem();
+    initializeWebAudioAPI();
     return cleanup;
   }, []);
 
-  const initializeAudioSystem = async () => {
+  const initializeWebAudioAPI = async () => {
     try {
-      // Create multiple instances of the same audio for seamless looping
-      audio1Ref.current = new Audio('./11L-medium_sound_raining-1752763639584.mp3');
-      audio2Ref.current = new Audio('./11L-medium_sound_raining-1752763639584.mp3');
-      audio3Ref.current = new Audio('./11L-medium_sound_raining-1752764780047.mp3');
+      // Create AudioContext for precise timing control
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       
-      // Configure audio properties for seamless playback
-      [audio1Ref.current, audio2Ref.current, audio3Ref.current].forEach((audio, index) => {
-        if (audio) {
-          audio.loop = false; // We'll handle looping manually for seamless transitions
-          audio.preload = 'auto';
-          audio.volume = 0;
-          audio.crossOrigin = 'anonymous';
-          
-          // Add event listeners for seamless transitions
-          audio.addEventListener('timeupdate', () => handleTimeUpdate(audio, index));
-          audio.addEventListener('ended', () => handleTrackEnd(index));
-          
-          // Prevent any gaps by ensuring smooth playback
-          audio.addEventListener('canplaythrough', () => {
-            console.log(`Track ${index + 1} ready for seamless playback`);
-          });
+      // Create master gain node
+      masterGainRef.current = audioContextRef.current.createGain();
+      masterGainRef.current.connect(audioContextRef.current.destination);
+      masterGainRef.current.gain.value = config.masterVolume;
+
+      // Load and decode audio files
+      await loadAudioBuffers();
+      
+      setIsLoaded(true);
+      console.log('Web Audio API initialized for gapless playback');
+      
+      // Auto-start after a brief delay
+      setTimeout(() => {
+        startGaplessPlayback();
+      }, 1000);
+      
+    } catch (error) {
+      console.error('Web Audio API initialization failed:', error);
+      // Fallback to HTML5 audio with improved gapless technique
+      initializeFallbackAudio();
+    }
+  };
+
+  const loadAudioBuffers = async () => {
+    const audioFiles = [
+      './11L-medium_sound_raining-1752763639584.mp3',
+      './11L-medium_sound_raining-1752764780047.mp3'
+    ];
+
+    const buffers = await Promise.all(
+      audioFiles.map(async (url) => {
+        const response = await fetch(url);
+        const arrayBuffer = await response.arrayBuffer();
+        return audioContextRef.current!.decodeAudioData(arrayBuffer);
+      })
+    );
+
+    audioBuffersRef.current = buffers;
+    trackDurationRef.current = buffers[0].duration;
+    console.log(`Audio buffers loaded, duration: ${trackDurationRef.current}s`);
+  };
+
+  const createSourceNode = (bufferIndex: number, startTime: number, gainValue: number = 0): AudioBufferSourceNode => {
+    if (!audioContextRef.current || !masterGainRef.current) {
+      throw new Error('AudioContext not initialized');
+    }
+
+    const source = audioContextRef.current.createBufferSource();
+    const gainNode = audioContextRef.current.createGain();
+    
+    source.buffer = audioBuffersRef.current[bufferIndex];
+    source.connect(gainNode);
+    gainNode.connect(masterGainRef.current);
+    gainNode.gain.value = gainValue;
+    
+    // Store references
+    sourceNodesRef.current.push(source);
+    gainNodesRef.current.push(gainNode);
+    
+    // Schedule the source to start
+    source.start(startTime);
+    
+    return source;
+  };
+
+  const scheduleNextTrack = (currentTime: number, trackIndex: number) => {
+    const nextTrackIndex = (trackIndex + 1) % audioBuffersRef.current.length;
+    const trackDuration = trackDurationRef.current;
+    const crossfadeStart = nextStartTimeRef.current + trackDuration - config.crossfadeDuration;
+    const nextTrackStart = nextStartTimeRef.current + trackDuration - config.preloadBuffer;
+
+    // Create the next track source (starts silent)
+    const nextSource = createSourceNode(nextTrackIndex, nextTrackStart, 0);
+    const nextGainNode = gainNodesRef.current[gainNodesRef.current.length - 1];
+
+    // Schedule crossfade
+    scheduleCrossfade(crossfadeStart, nextGainNode, true); // Fade in next track
+    
+    // Schedule fade out of current track if there is one
+    if (gainNodesRef.current.length >= 2) {
+      const currentGainNode = gainNodesRef.current[gainNodesRef.current.length - 2];
+      scheduleCrossfade(crossfadeStart, currentGainNode, false); // Fade out current track
+    }
+
+    // Update timing for next iteration
+    nextStartTimeRef.current = nextTrackStart + config.preloadBuffer;
+    
+    // Schedule the next track after this one
+    setTimeout(() => {
+      if (isPlaying) {
+        scheduleNextTrack(audioContextRef.current!.currentTime, nextTrackIndex);
+        setCurrentTrack(nextTrackIndex);
+      }
+    }, (trackDuration - config.crossfadeDuration - 1) * 1000); // Schedule 1 second before crossfade
+  };
+
+  const scheduleCrossfade = (startTime: number, gainNode: GainNode, fadeIn: boolean) => {
+    if (!audioContextRef.current) return;
+
+    const currentTime = audioContextRef.current.currentTime;
+    const actualStartTime = Math.max(startTime, currentTime);
+    const endTime = actualStartTime + config.crossfadeDuration;
+
+    if (fadeIn) {
+      // Fade in: 0 -> 1
+      gainNode.gain.setValueAtTime(0, actualStartTime);
+      gainNode.gain.linearRampToValueAtTime(1, endTime);
+    } else {
+      // Fade out: current value -> 0
+      gainNode.gain.setValueAtTime(gainNode.gain.value, actualStartTime);
+      gainNode.gain.linearRampToValueAtTime(0, endTime);
+    }
+  };
+
+  const startGaplessPlayback = async () => {
+    if (!audioContextRef.current || audioBuffersRef.current.length === 0) return;
+
+    try {
+      // Resume AudioContext if suspended
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+
+      const currentTime = audioContextRef.current.currentTime;
+      nextStartTimeRef.current = currentTime + 0.1; // Small delay to ensure smooth start
+
+      // Start first track with fade-in
+      const firstSource = createSourceNode(0, nextStartTimeRef.current, 0);
+      const firstGainNode = gainNodesRef.current[gainNodesRef.current.length - 1];
+      
+      // Smooth fade-in for first track
+      firstGainNode.gain.setValueAtTime(0, nextStartTimeRef.current);
+      firstGainNode.gain.linearRampToValueAtTime(1, nextStartTimeRef.current + 2);
+
+      // Update timing
+      nextStartTimeRef.current += trackDurationRef.current - config.preloadBuffer;
+
+      // Schedule the continuous loop
+      setTimeout(() => {
+        if (isPlaying) {
+          scheduleNextTrack(currentTime, 0);
+        }
+      }, (trackDurationRef.current - config.crossfadeDuration - 1) * 1000);
+
+      setIsPlaying(true);
+      setCurrentTrack(0);
+      isInitializedRef.current = true;
+      
+      console.log('Gapless playback started with Web Audio API');
+      
+    } catch (error) {
+      console.error('Failed to start gapless playback:', error);
+      initializeFallbackAudio();
+    }
+  };
+
+  const stopGaplessPlayback = () => {
+    // Stop all source nodes
+    sourceNodesRef.current.forEach(source => {
+      try {
+        source.stop();
+      } catch (e) {
+        // Source might already be stopped
+      }
+    });
+
+    // Clear arrays
+    sourceNodesRef.current = [];
+    gainNodesRef.current = [];
+    
+    setIsPlaying(false);
+    isInitializedRef.current = false;
+  };
+
+  // Fallback HTML5 audio system with improved gapless technique
+  const fallbackAudioRef = useRef<HTMLAudioElement[]>([]);
+  const fallbackCurrentRef = useRef(0);
+  const fallbackNextRef = useRef(1);
+
+  const initializeFallbackAudio = async () => {
+    console.log('Initializing fallback HTML5 audio system');
+    
+    // Create 5 audio instances for better gapless playback
+    const audioFiles = [
+      './11L-medium_sound_raining-1752763639584.mp3',
+      './11L-medium_sound_raining-1752764780047.mp3'
+    ];
+
+    fallbackAudioRef.current = [];
+    
+    for (let i = 0; i < 5; i++) {
+      const audio = new Audio(audioFiles[i % audioFiles.length]);
+      audio.preload = 'auto';
+      audio.volume = 0;
+      
+      // Critical: Set up for gapless playback
+      audio.addEventListener('canplaythrough', () => {
+        console.log(`Fallback audio ${i} ready`);
+      });
+
+      // Handle track ending with immediate transition
+      audio.addEventListener('timeupdate', () => {
+        if (audio.currentTime >= audio.duration - 0.5) { // 0.5 seconds before end
+          prepareNextFallbackTrack(i);
         }
       });
 
-      // Load all tracks
-      await Promise.all([
-        loadAudioTrack(audio1Ref.current),
-        loadAudioTrack(audio2Ref.current),
-        loadAudioTrack(audio3Ref.current)
-      ]);
-      
-      setIsLoaded(true);
-      console.log('All audio tracks loaded for seamless playback');
-      
-      // Auto-start with smooth fade-in
-      setTimeout(() => {
-        startSeamlessPlayback();
-      }, 2000);
-      
-    } catch (error) {
-      console.error('Audio initialization failed:', error);
-      fallbackAudioPlay();
+      audio.addEventListener('ended', () => {
+        transitionFallbackTrack(i);
+      });
+
+      fallbackAudioRef.current.push(audio);
     }
-  };
 
-  const loadAudioTrack = (audio: HTMLAudioElement | null): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      if (!audio) {
-        reject(new Error('Audio element not found'));
-        return;
-      }
-      
-      const handleLoad = () => {
-        audio.removeEventListener('canplaythrough', handleLoad);
-        audio.removeEventListener('error', handleError);
-        resolve();
-      };
-      
-      const handleError = () => {
-        audio.removeEventListener('canplaythrough', handleLoad);
-        audio.removeEventListener('error', handleError);
-        reject(new Error('Failed to load audio'));
-      };
-      
-      audio.addEventListener('canplaythrough', handleLoad, { once: true });
-      audio.addEventListener('error', handleError, { once: true });
-      audio.load();
-    });
-  };
+    // Load all tracks
+    await Promise.all(
+      fallbackAudioRef.current.map(audio => 
+        new Promise<void>((resolve) => {
+          if (audio.readyState >= 4) {
+            resolve();
+          } else {
+            audio.addEventListener('canplaythrough', () => resolve(), { once: true });
+          }
+        })
+      )
+    );
 
-  const handleTimeUpdate = (audio: HTMLAudioElement, trackIndex: number) => {
-    if (!isPlaying) return;
+    setIsLoaded(true);
     
-    const duration = audio.duration;
-    const currentTime = audio.currentTime;
-    const timeRemaining = duration - currentTime;
-    
-    // Start crossfade 3 seconds before track ends
-    if (timeRemaining <= 3 && timeRemaining > 2.8) {
-      prepareNextTrack(trackIndex);
-    }
+    // Start fallback playback
+    setTimeout(() => {
+      startFallbackPlayback();
+    }, 1000);
   };
 
-  const handleTrackEnd = (trackIndex: number) => {
-    console.log(`Track ${trackIndex + 1} ended, transitioning seamlessly`);
-    transitionToNextTrack();
-  };
-
-  const prepareNextTrack = (currentTrackIndex: number) => {
-    const tracks = [audio1Ref.current, audio2Ref.current, audio3Ref.current];
-    const nextTrackIndex = (currentTrackIndex + 1) % tracks.length;
-    const nextTrack = tracks[nextTrackIndex];
+  const prepareNextFallbackTrack = (currentIndex: number) => {
+    const nextIndex = (currentIndex + 1) % fallbackAudioRef.current.length;
+    const nextAudio = fallbackAudioRef.current[nextIndex];
     
-    if (nextTrack && nextTrack.paused) {
-      // Reset and prepare next track
-      nextTrack.currentTime = 0;
-      nextTrack.volume = 0;
+    if (nextAudio && nextAudio.paused) {
+      nextAudio.currentTime = 0;
+      nextAudio.volume = 0;
       
       // Start next track silently
-      nextTrack.play().then(() => {
-        // Begin crossfade
-        startCrossfade(tracks[currentTrackIndex], nextTrack);
-        setCurrentTrack(nextTrackIndex);
+      nextAudio.play().then(() => {
+        // Quick crossfade
+        const fadeSteps = 20;
+        const fadeInterval = 25; // 25ms steps
+        let step = 0;
+        
+        const crossfade = setInterval(() => {
+          step++;
+          const progress = step / fadeSteps;
+          
+          // Fade out current, fade in next
+          fallbackAudioRef.current[currentIndex].volume = 0.6 * (1 - progress);
+          nextAudio.volume = 0.6 * progress;
+          
+          if (step >= fadeSteps) {
+            clearInterval(crossfade);
+            fallbackAudioRef.current[currentIndex].pause();
+            fallbackAudioRef.current[currentIndex].currentTime = 0;
+          }
+        }, fadeInterval);
+        
+        fallbackCurrentRef.current = nextIndex;
       }).catch(console.error);
     }
   };
 
-  const startCrossfade = (currentAudio: HTMLAudioElement | null, nextAudio: HTMLAudioElement | null) => {
-    if (!currentAudio || !nextAudio) return;
+  const transitionFallbackTrack = (endedIndex: number) => {
+    // Ensure smooth transition even if preparation failed
+    const nextIndex = (endedIndex + 1) % fallbackAudioRef.current.length;
+    const nextAudio = fallbackAudioRef.current[nextIndex];
     
-    const crossfadeDuration = 2000; // 2 seconds
-    const steps = 40; // 50ms intervals
-    const stepDuration = crossfadeDuration / steps;
-    let step = 0;
-    
-    const currentStartVolume = currentAudio.volume;
-    const nextStartVolume = 0;
-    const targetVolume = 0.6;
-    
-    const crossfadeInterval = setInterval(() => {
-      step++;
-      const progress = step / steps;
-      
-      // Smooth crossfade curve
-      const fadeOutVolume = currentStartVolume * (1 - progress);
-      const fadeInVolume = targetVolume * progress;
-      
-      currentAudio.volume = Math.max(0, fadeOutVolume);
-      nextAudio.volume = Math.min(targetVolume, fadeInVolume);
-      
-      if (step >= steps) {
-        clearInterval(crossfadeInterval);
-        // Ensure clean transition
-        currentAudio.pause();
-        currentAudio.currentTime = 0;
-        nextAudio.volume = targetVolume;
-      }
-    }, stepDuration);
-  };
-
-  const transitionToNextTrack = () => {
-    const tracks = [audio1Ref.current, audio2Ref.current, audio3Ref.current];
-    const nextTrackIndex = (currentTrack + 1) % tracks.length;
-    const nextTrack = tracks[nextTrackIndex];
-    
-    if (nextTrack && nextTrack.paused) {
-      nextTrack.currentTime = 0;
-      nextTrack.volume = 0.6;
-      nextTrack.play().catch(console.error);
-      setCurrentTrack(nextTrackIndex);
+    if (nextAudio && nextAudio.paused) {
+      nextAudio.currentTime = 0;
+      nextAudio.volume = 0.6;
+      nextAudio.play().catch(console.error);
+      fallbackCurrentRef.current = nextIndex;
     }
   };
 
-  const startSeamlessPlayback = async () => {
-    if (!audio1Ref.current) return;
+  const startFallbackPlayback = () => {
+    const firstAudio = fallbackAudioRef.current[0];
+    if (!firstAudio) return;
+
+    firstAudio.currentTime = 0;
+    firstAudio.volume = 0;
     
-    try {
-      // Start with the first track
-      audio1Ref.current.currentTime = 0;
-      audio1Ref.current.volume = 0;
-      
-      await audio1Ref.current.play();
-      
-      // Smooth fade-in over 2 seconds
-      const fadeInDuration = 2000;
-      const steps = 40;
-      const stepDuration = fadeInDuration / steps;
+    firstAudio.play().then(() => {
+      // Smooth fade-in
+      const fadeSteps = 40;
+      const fadeInterval = 50;
       let step = 0;
-      const targetVolume = 0.6;
       
       const fadeIn = setInterval(() => {
         step++;
-        const progress = step / steps;
-        const volume = targetVolume * progress;
+        const progress = step / fadeSteps;
+        firstAudio.volume = 0.6 * progress;
         
-        if (audio1Ref.current) {
-          audio1Ref.current.volume = Math.min(targetVolume, volume);
-        }
-        
-        if (step >= steps) {
+        if (step >= fadeSteps) {
           clearInterval(fadeIn);
         }
-      }, stepDuration);
+      }, fadeInterval);
       
       setIsPlaying(true);
-      setCurrentTrack(0);
-      console.log('Seamless audio playback started');
+      fallbackCurrentRef.current = 0;
+      console.log('Fallback gapless playback started');
       
-    } catch (error) {
-      console.error('Seamless playback failed:', error);
-      fallbackAudioPlay();
-    }
-  };
-
-  const fallbackAudioPlay = () => {
-    if (audio1Ref.current) {
-      audio1Ref.current.loop = true;
-      audio1Ref.current.volume = 0.6;
-      audio1Ref.current.play().catch(console.error);
-      setIsPlaying(true);
-      setIsLoaded(true);
-    }
-  };
-
-  const stopSeamlessPlayback = () => {
-    const tracks = [audio1Ref.current, audio2Ref.current, audio3Ref.current];
-    
-    // Find currently playing track
-    const playingTrack = tracks.find(track => track && !track.paused);
-    
-    if (playingTrack) {
-      const fadeOutDuration = 1500;
-      const steps = 30;
-      const stepDuration = fadeOutDuration / steps;
-      let step = 0;
-      const startVolume = playingTrack.volume;
-      
-      const fadeOut = setInterval(() => {
-        step++;
-        const progress = step / steps;
-        const volume = startVolume * (1 - progress);
-        
-        playingTrack.volume = Math.max(0, volume);
-        
-        if (step >= steps) {
-          clearInterval(fadeOut);
-          tracks.forEach(track => {
-            if (track) {
-              track.pause();
-              track.currentTime = 0;
-            }
-          });
-          setIsPlaying(false);
-        }
-      }, stepDuration);
-    }
-    
-    if (crossfadeTimeoutRef.current) {
-      clearTimeout(crossfadeTimeoutRef.current);
-    }
+    }).catch(console.error);
   };
 
   const cleanup = () => {
-    const tracks = [audio1Ref.current, audio2Ref.current, audio3Ref.current];
-    
-    tracks.forEach(track => {
-      if (track) {
-        track.pause();
-        track.removeEventListener('timeupdate', () => {});
-        track.removeEventListener('ended', () => {});
-        track.removeEventListener('canplaythrough', () => {});
-        track.removeEventListener('error', () => {});
+    // Clean up Web Audio API
+    sourceNodesRef.current.forEach(source => {
+      try {
+        source.stop();
+        source.disconnect();
+      } catch (e) {
+        // Already stopped/disconnected
       }
     });
     
-    audio1Ref.current = null;
-    audio2Ref.current = null;
-    audio3Ref.current = null;
-    
-    if (crossfadeTimeoutRef.current) {
-      clearTimeout(crossfadeTimeoutRef.current);
-    }
-  };
-
-  // Dynamic volume variation for natural feel
-  useEffect(() => {
-    if (!isPlaying) return;
-    
-    const interval = setInterval(() => {
-      const tracks = [audio1Ref.current, audio2Ref.current, audio3Ref.current];
-      const playingTrack = tracks.find(track => track && !track.paused);
-      
-      if (playingTrack) {
-        const time = Date.now() / 1000;
-        const baseVolume = 0.6;
-        const variation = Math.sin(time * 0.05) * 0.1; // Subtle variation
-        const newVolume = Math.max(0.4, Math.min(0.8, baseVolume + variation));
-        
-        // Smooth volume transition
-        const currentVolume = playingTrack.volume;
-        const volumeDiff = newVolume - currentVolume;
-        playingTrack.volume = currentVolume + (volumeDiff * 0.1); // Gradual change
+    gainNodesRef.current.forEach(gain => {
+      try {
+        gain.disconnect();
+      } catch (e) {
+        // Already disconnected
       }
-    }, 200); // Update every 200ms for smooth transitions
-    
-    return () => clearInterval(interval);
-  }, [isPlaying]);
+    });
+
+    if (masterGainRef.current) {
+      masterGainRef.current.disconnect();
+    }
+
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+    }
+
+    // Clean up fallback audio
+    fallbackAudioRef.current.forEach(audio => {
+      audio.pause();
+      audio.src = '';
+    });
+
+    // Clear refs
+    sourceNodesRef.current = [];
+    gainNodesRef.current = [];
+    fallbackAudioRef.current = [];
+    audioContextRef.current = null;
+    masterGainRef.current = null;
+  };
 
   return {
     isPlaying,
     isLoaded,
-    startMixedPlayback: startSeamlessPlayback,
-    stopMixedPlayback: stopSeamlessPlayback,
+    startMixedPlayback: audioContextRef.current ? startGaplessPlayback : startFallbackPlayback,
+    stopMixedPlayback: audioContextRef.current ? stopGaplessPlayback : () => {
+      fallbackAudioRef.current.forEach(audio => audio.pause());
+      setIsPlaying(false);
+    },
     config,
     currentTrack
   };
