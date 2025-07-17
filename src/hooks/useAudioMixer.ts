@@ -1,196 +1,299 @@
 import { useEffect, useRef, useState } from 'react';
 
-interface AudioMixerConfig {
-  track1Volume: number;
-  track2Volume: number;
-  masterVolume: number;
-  crossfadePosition: number;
-}
-
 export const useAudioMixer = () => {
-  const audio1Ref = useRef<HTMLAudioElement | null>(null);
-  const audio2Ref = useRef<HTMLAudioElement | null>(null);
+  const audioInstancesRef = useRef<HTMLAudioElement[]>([]);
+  const currentIndexRef = useRef(0);
+  const isPlayingRef = useRef(false);
+  const overlapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [config] = useState<AudioMixerConfig>({
-    track1Volume: 0.8,
-    track2Volume: 0.7,
-    masterVolume: 0.9,
-    crossfadePosition: 0.5
-  });
+
+  // Configuration for overlapping
+  const OVERLAP_DURATION = 5; // 5 seconds overlap
+  const FADE_DURATION = 3; // 3 seconds fade
+  const NUM_INSTANCES = 6; // 6 instances for smooth rotation
+
+  const audioFiles = [
+    './11L-medium_sound_raining-1752763639584.mp3',
+    './11L-medium_sound_raining-1752764780047.mp3'
+  ];
 
   useEffect(() => {
-    initializeAudioSystem();
+    initializeOverlappingAudio();
     return cleanup;
   }, []);
 
-  const initializeAudioSystem = async () => {
-    try {
-      // Create audio elements with correct paths
-      audio1Ref.current = new Audio('./11L-medium_sound_raining-1752763639584.mp3');
-      audio2Ref.current = new Audio('./11L-medium_sound_raining-1752764780047.mp3');
+  const initializeOverlappingAudio = async () => {
+    console.log('Initializing overlapping audio system...');
+    
+    // Create multiple instances of each audio file
+    audioInstancesRef.current = [];
+    
+    for (let i = 0; i < NUM_INSTANCES; i++) {
+      const audio = new Audio(audioFiles[i % audioFiles.length]);
       
-      // Configure audio properties
-      [audio1Ref.current, audio2Ref.current].forEach(audio => {
-        if (audio) {
-          audio.loop = true;
-          audio.preload = 'auto';
-          audio.volume = 0.4; // Start with audible volume
-          audio.crossOrigin = 'anonymous';
+      // Critical settings for gapless playback
+      audio.preload = 'auto';
+      audio.volume = 0;
+      audio.loop = false; // We handle looping manually
+      
+      // Ensure audio is ready
+      await new Promise<void>((resolve) => {
+        const onCanPlay = () => {
+          audio.removeEventListener('canplaythrough', onCanPlay);
+          resolve();
+        };
+        
+        if (audio.readyState >= 4) {
+          resolve();
+        } else {
+          audio.addEventListener('canplaythrough', onCanPlay);
         }
       });
-
-      // Wait for both tracks to load
-      await Promise.all([
-        new Promise((resolve, reject) => {
-          if (audio1Ref.current) {
-            audio1Ref.current.addEventListener('canplaythrough', resolve, { once: true });
-            audio1Ref.current.addEventListener('error', reject, { once: true });
-            audio1Ref.current.load();
-          }
-        }),
-        new Promise((resolve, reject) => {
-          if (audio2Ref.current) {
-            audio2Ref.current.addEventListener('canplaythrough', resolve, { once: true });
-            audio2Ref.current.addEventListener('error', reject, { once: true });
-            audio2Ref.current.load();
-          }
-        })
-      ]);
       
-      setIsLoaded(true);
-      console.log('Audio files loaded successfully');
-      
-      // Auto-start after 3 seconds
-      setTimeout(() => {
-        startMixedPlayback();
-      }, 3000);
-      
-    } catch (error) {
-      console.error('Audio initialization failed:', error);
-      // Fallback: try to play without Web Audio API
-      fallbackAudioPlay();
+      audioInstancesRef.current.push(audio);
     }
-  };
-
-  const fallbackAudioPlay = () => {
-    if (audio1Ref.current && audio2Ref.current) {
-      audio1Ref.current.volume = 0.6;
-      audio2Ref.current.volume = 0.4;
-      
-      audio1Ref.current.play().catch(console.error);
-      audio2Ref.current.play().catch(console.error);
-      
-      setIsPlaying(true);
-      setIsLoaded(true);
-    }
-  };
-
-  const startMixedPlayback = async () => {
-    if (!audio1Ref.current || !audio2Ref.current) return;
     
-    try {
-      // Start with fade-in effect
-      audio1Ref.current.volume = 0;
-      audio2Ref.current.volume = 0;
-      
-      // Start both tracks
-      await Promise.all([
-        audio1Ref.current.play(),
-        audio2Ref.current.play()
-      ]);
-      
-      // Fade in over 3 seconds
-      const fadeSteps = 30;
-      const fadeInterval = 100; // 100ms intervals
-      let step = 0;
-      
-      const fadeIn = setInterval(() => {
-        step++;
-        const progress = step / fadeSteps;
-        
-        if (audio1Ref.current && audio2Ref.current) {
-          audio1Ref.current.volume = Math.min(0.6 * progress, 0.6);
-          audio2Ref.current.volume = Math.min(0.4 * progress, 0.4);
-        }
-        
-        if (step >= fadeSteps) {
-          clearInterval(fadeIn);
-        }
-      }, fadeInterval);
-      
-      setIsPlaying(true);
-      console.log('Audio playback started');
-      
-    } catch (error) {
-      console.error('Playback failed:', error);
-      fallbackAudioPlay();
-    }
+    setIsLoaded(true);
+    console.log(`${NUM_INSTANCES} audio instances loaded and ready`);
+    
+    // Auto-start after brief delay
+    setTimeout(() => {
+      startOverlappingPlayback();
+    }, 500);
   };
 
-  const stopMixedPlayback = () => {
-    if (audio1Ref.current && audio2Ref.current) {
-      // Fade out
-      const fadeSteps = 20;
-      const fadeInterval = 100;
-      let step = 0;
+  const startOverlappingPlayback = () => {
+    if (isPlayingRef.current) return;
+    
+    console.log('Starting overlapping audio playback...');
+    isPlayingRef.current = true;
+    setIsPlaying(true);
+    currentIndexRef.current = 0;
+    
+    // Start first track
+    playTrackWithOverlap(0);
+  };
+
+  const playTrackWithOverlap = (instanceIndex: number) => {
+    if (!isPlayingRef.current) return;
+    
+    const currentAudio = audioInstancesRef.current[instanceIndex];
+    if (!currentAudio) return;
+    
+    console.log(`Playing track ${instanceIndex}`);
+    
+    // Reset and start current track
+    currentAudio.currentTime = 0;
+    currentAudio.volume = 0;
+    
+    currentAudio.play().then(() => {
+      // Fade in current track
+      fadeIn(currentAudio);
       
-      const currentVol1 = audio1Ref.current.volume;
-      const currentVol2 = audio2Ref.current.volume;
+      // Calculate when to start next track (with overlap)
+      const trackDuration = currentAudio.duration;
+      const nextStartTime = (trackDuration - OVERLAP_DURATION) * 1000;
       
-      const fadeOut = setInterval(() => {
-        step++;
-        const progress = 1 - (step / fadeSteps);
-        
-        if (audio1Ref.current && audio2Ref.current) {
-          audio1Ref.current.volume = currentVol1 * progress;
-          audio2Ref.current.volume = currentVol2 * progress;
+      console.log(`Track ${instanceIndex} duration: ${trackDuration}s, next starts in: ${nextStartTime/1000}s`);
+      
+      // Schedule next track to start with overlap
+      overlapTimeoutRef.current = setTimeout(() => {
+        if (isPlayingRef.current) {
+          const nextIndex = (instanceIndex + 1) % audioInstancesRef.current.length;
+          
+          // Start next track overlapping with current
+          startOverlappingTrack(nextIndex, currentAudio);
+          
+          // Continue the cycle
+          playTrackWithOverlap(nextIndex);
         }
+      }, nextStartTime);
+      
+    }).catch((error) => {
+      console.error(`Error playing track ${instanceIndex}:`, error);
+      // Try next track if current fails
+      const nextIndex = (instanceIndex + 1) % audioInstancesRef.current.length;
+      setTimeout(() => playTrackWithOverlap(nextIndex), 100);
+    });
+  };
+
+  const startOverlappingTrack = (nextIndex: number, currentAudio: HTMLAudioElement) => {
+    const nextAudio = audioInstancesRef.current[nextIndex];
+    if (!nextAudio || !isPlayingRef.current) return;
+    
+    console.log(`Starting overlapping track ${nextIndex}`);
+    
+    // Start next track silently
+    nextAudio.currentTime = 0;
+    nextAudio.volume = 0;
+    
+    nextAudio.play().then(() => {
+      // Crossfade: fade out current, fade in next
+      crossfade(currentAudio, nextAudio);
+    }).catch((error) => {
+      console.error(`Error starting overlapping track ${nextIndex}:`, error);
+    });
+  };
+
+  const fadeIn = (audio: HTMLAudioElement) => {
+    const steps = 60; // 60 steps for smooth fade
+    const stepDuration = (FADE_DURATION * 1000) / steps;
+    const volumeStep = 0.7 / steps; // Target volume 0.7
+    let currentStep = 0;
+    
+    const fadeInterval = setInterval(() => {
+      if (!isPlayingRef.current || audio.paused) {
+        clearInterval(fadeInterval);
+        return;
+      }
+      
+      currentStep++;
+      audio.volume = Math.min(volumeStep * currentStep, 0.7);
+      
+      if (currentStep >= steps) {
+        clearInterval(fadeInterval);
+        audio.volume = 0.7;
+      }
+    }, stepDuration);
+  };
+
+  const crossfade = (currentAudio: HTMLAudioElement, nextAudio: HTMLAudioElement) => {
+    const steps = 60; // 60 steps for ultra-smooth crossfade
+    const stepDuration = (FADE_DURATION * 1000) / steps;
+    const volumeStep = 0.7 / steps;
+    let currentStep = 0;
+    
+    console.log('Starting crossfade...');
+    
+    const crossfadeInterval = setInterval(() => {
+      if (!isPlayingRef.current) {
+        clearInterval(crossfadeInterval);
+        return;
+      }
+      
+      currentStep++;
+      const progress = currentStep / steps;
+      
+      // Fade out current track
+      if (!currentAudio.paused) {
+        currentAudio.volume = Math.max(0.7 * (1 - progress), 0);
+      }
+      
+      // Fade in next track
+      if (!nextAudio.paused) {
+        nextAudio.volume = Math.min(0.7 * progress, 0.7);
+      }
+      
+      if (currentStep >= steps) {
+        clearInterval(crossfadeInterval);
         
-        if (step >= fadeSteps) {
-          clearInterval(fadeOut);
-          audio1Ref.current?.pause();
-          audio2Ref.current?.pause();
-          setIsPlaying(false);
-        }
-      }, fadeInterval);
+        // Stop and reset the previous track
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+        currentAudio.volume = 0;
+        
+        nextAudio.volume = 0.7;
+        console.log('Crossfade completed');
+      }
+    }, stepDuration);
+  };
+
+  const stopOverlappingPlayback = () => {
+    console.log('Stopping overlapping audio playback...');
+    isPlayingRef.current = false;
+    setIsPlaying(false);
+    
+    // Clear any pending timeouts
+    if (overlapTimeoutRef.current) {
+      clearTimeout(overlapTimeoutRef.current);
+      overlapTimeoutRef.current = null;
     }
+    
+    // Stop all audio instances
+    audioInstancesRef.current.forEach((audio, index) => {
+      if (!audio.paused) {
+        console.log(`Stopping audio instance ${index}`);
+        
+        // Fade out quickly
+        const fadeSteps = 20;
+        const fadeInterval = 25;
+        let step = 0;
+        
+        const quickFade = setInterval(() => {
+          step++;
+          audio.volume = Math.max(audio.volume * (1 - step / fadeSteps), 0);
+          
+          if (step >= fadeSteps || audio.volume <= 0.01) {
+            clearInterval(quickFade);
+            audio.pause();
+            audio.currentTime = 0;
+            audio.volume = 0;
+          }
+        }, fadeInterval);
+      }
+    });
   };
 
   const cleanup = () => {
-    if (audio1Ref.current) {
-      audio1Ref.current.pause();
-      audio1Ref.current = null;
-    }
-    if (audio2Ref.current) {
-      audio2Ref.current.pause();
-      audio2Ref.current = null;
-    }
+    console.log('Cleaning up audio system...');
+    stopOverlappingPlayback();
+    
+    // Clean up all audio instances
+    audioInstancesRef.current.forEach((audio) => {
+      audio.pause();
+      audio.src = '';
+      audio.load();
+    });
+    
+    audioInstancesRef.current = [];
   };
 
-  // Dynamic mixing for natural variation
+  // Handle page visibility change to maintain playback
   useEffect(() => {
-    if (!isPlaying || !audio1Ref.current || !audio2Ref.current) return;
-    
-    const interval = setInterval(() => {
-      const time = Date.now() / 1000;
-      const variation1 = 0.5 + Math.sin(time * 0.1) * 0.2; // 0.3 to 0.7
-      const variation2 = 0.5 + Math.cos(time * 0.08) * 0.15; // 0.35 to 0.65
-      
-      if (audio1Ref.current && audio2Ref.current) {
-        audio1Ref.current.volume = Math.max(0.2, Math.min(0.8, variation1));
-        audio2Ref.current.volume = Math.max(0.2, Math.min(0.6, variation2));
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        console.log('Page hidden - maintaining audio playback');
+        // Keep playing even when tab is not visible
+      } else {
+        console.log('Page visible - ensuring audio continues');
+        // Ensure audio is still playing when tab becomes visible
+        if (isPlayingRef.current && audioInstancesRef.current.length > 0) {
+          const anyPlaying = audioInstancesRef.current.some(audio => !audio.paused);
+          if (!anyPlaying) {
+            console.log('Restarting audio after visibility change');
+            startOverlappingPlayback();
+          }
+        }
       }
-    }, 3000); // Update every 3 seconds
-    
-    return () => clearInterval(interval);
-  }, [isPlaying]);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
+  // Handle page unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      console.log('Page unloading - stopping audio');
+      stopOverlappingPlayback();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   return {
     isPlaying,
     isLoaded,
-    startMixedPlayback,
-    stopMixedPlayback,
-    config
+    startMixedPlayback: startOverlappingPlayback,
+    stopMixedPlayback: stopOverlappingPlayback,
+    config: {
+      masterVolume: 0.7,
+      overlapDuration: OVERLAP_DURATION,
+      fadeDuration: FADE_DURATION
+    },
+    currentTrack: currentIndexRef.current
   };
 };
