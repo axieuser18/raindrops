@@ -3,6 +3,13 @@ import { motion } from 'framer-motion';
 import { useAudioMixer } from './hooks/useAudioMixer';
 import { EnhancedAnimations, FloatingParticles, AdvancedRipples } from './components/EnhancedAnimations';
 import { AdvancedLighting, StreetLamps } from './components/AdvancedLighting';
+import { ThreeJSCanvas } from './components/ThreeJSEffects';
+import { AdvancedGestures } from './components/AdvancedGestures';
+import { SmoothScrolling } from './components/SmoothScrolling';
+import { MorphingShapes } from './components/MorphingShapes';
+import { ParallaxLayers } from './components/ParallaxLayers';
+import { AdvancedParticles } from './components/AdvancedParticles';
+import { FluidAnimations } from './components/FluidAnimations';
 import './RaindropBackground.css';
 import AOS from 'aos';
 import 'aos/dist/aos.css';
@@ -53,8 +60,22 @@ function App() {
   const splashDrops = createRaindrops(12, 'splash', [1.5, 0.8]);
 
   return (
-    <EnhancedAnimations>
-      <div className="rain-container">
+    <SmoothScrolling>
+      <AdvancedGestures>
+        <EnhancedAnimations>
+          <div className="rain-container">
+            {/* Three.js 3D Effects Layer */}
+            <ThreeJSCanvas />
+            
+            {/* Parallax background layers */}
+            <ParallaxLayers />
+            
+            {/* Advanced particle system */}
+            <AdvancedParticles />
+            
+            {/* Morphing shapes */}
+            <MorphingShapes />
+
         {/* Enhanced background with breathing effect */}
         <motion.div 
           className="rain-background"
@@ -321,6 +342,9 @@ function App() {
         {/* Advanced ripple effects */}
         <AdvancedRipples />
         
+        {/* Fluid wave animations */}
+        <FluidAnimations />
+        
         {/* Enhanced puddle effects */}
         <div className="puddle-effects">
           {Array.from({ length: 12 }, (_, i) => (
@@ -365,8 +389,9 @@ function App() {
           />
         )}
       </div>
-    </EnhancedAnimations>
-  );
+        </EnhancedAnimations>
+      </AdvancedGestures>
+    </SmoothScrolling>
 }
 
 export default App;
