@@ -387,8 +387,12 @@ function App() {
               zIndex: 1000
             }}
           />
+        )}
+          </div>
+        </EnhancedAnimations>
+      </AdvancedGestures>
+    </SmoothScrolling>
+  );
 }
-
-export default App;
 
 export default App;
